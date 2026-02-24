@@ -95,7 +95,11 @@ public static class AIManager
     /// </summary>
     public static bool IsAIControlled(int playerId)
     {
-        return _config.Enabled && playerId == _config.AIPlayerSlot;
+        if (!_config.Enabled) return false;
+        // Use AIPlayerSlots list if populated, otherwise fall back to single AIPlayerSlot
+        if (_config.AIPlayerSlots.Count > 0)
+            return _config.AIPlayerSlots.Contains(playerId);
+        return playerId == _config.AIPlayerSlot;
     }
 
     /// <summary>
@@ -189,7 +193,8 @@ public static class AIManager
 public class AIConfig
 {
     public bool Enabled { get; set; } = true;
-    public int AIPlayerSlot { get; set; } = 1; // Which player slot the AI controls
+    public int AIPlayerSlot { get; set; } = 1;           // Single slot (legacy)
+    public List<int> AIPlayerSlots { get; set; } = new(); // All slots GPT controls (empty = use AIPlayerSlot)
     public string BackendUrl { get; set; } = "http://localhost:3001";
     public bool DebugLogging { get; set; } = true;
     public int ActionDelayMs { get; set; } = 200; // Delay between actions
