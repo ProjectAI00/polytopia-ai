@@ -271,12 +271,13 @@ function applyEndTurn(state: GameState, playerId: number): ApplyResult {
     }
   }
 
-  // Award stars for next turn
+  // Award stars for next turn + accumulate score (1 pt per star earned)
   const player = state.players.find((p) => p.id === playerId);
   if (player) {
     const spt = computeStarsPerTurn(state, playerId);
     player.stars += spt;
     player.starsPerTurn = spt;
+    player.score = (player.score || 0) + spt; // score tracks total stars earned
   }
 
   // Advance to next player

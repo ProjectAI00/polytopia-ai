@@ -89,7 +89,8 @@ Available action types:
 
 CRITICAL RULES:
 - Use the EXACT coordinates from the unit list for unitX/unitY
-- Units can only move to adjacent tiles (1 tile away, or 2 for riders)
+- Movement is STRICTLY 4-directional: up (y-1), down (y+1), left (x-1), right (x+1). NEVER diagonal.
+- Units can only move to adjacent tiles (Manhattan distance 1, or 2 for riders)
 - Units can only attack enemies within their range
 - If you have units, MOVE or ATTACK with them - this is your priority
 - Never research a tech you already have
