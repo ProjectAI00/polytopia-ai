@@ -1,73 +1,54 @@
 using System;
-using System.Collections.Generic;
 using System.Threading;
-using BepInEx.Logging;
 using BepInEx.Preloader.Core.Patching;
 using BepInEx.Unity.IL2CPP;
-using Mono.Cecil;
 
 namespace PolyAITrigger;
 
 /// <summary>
-/// BepInEx Preloader Patcher that bypasses the IL2CPPChainloader's broken
-/// Internal_ActiveSceneChanged trigger on Unity 6 / macOS 26.
+/// BepInEx 6 Preloader Patcher — forces plugin loading on Unity 6 / macOS.
 ///
-/// Root cause: Unity 6 AOT-compiles Internal_ActiveSceneChanged, so it never
-/// passes through il2cpp_runtime_invoke, and IL2CPPChainloader.Execute() (which
-/// loads plugins) is never called.
-///
-/// Fix: after a short delay to let Unity start up, force-call Execute() directly.
+/// Unity 6 AOT-compiles Internal_ActiveSceneChanged, so BepInEx's il2cpp_runtime_invoke
+/// hook never fires and IL2CPPChainloader.Execute() (which loads plugins) is never called.
+/// This patcher forces Execute() from a background thread 8s after game start.
 /// </summary>
 [PatcherPluginInfo("com.polytopia-ai.polyaitrigger", "PolyAITrigger", "1.0.0")]
-public static class PolyAITrigger
+public class PolyAITrigger : BasePatcher
 {
-    private static readonly ManualLogSource Log = Logger.CreateLogSource("PolyAITrigger");
-
-    // Must return empty — we don't patch any assemblies, we just add a trigger
-    public static IEnumerable<string> TargetDLLs
+    public override void Initialize()
     {
-        get { return Array.Empty<string>(); }
+        Log.LogInfo("[PolyAITrigger] Loaded. Will call Execute() in 8s...");
+        new Thread(TriggerThread) { IsBackground = true, Name = "PolyAITrigger" }.Start();
     }
 
-    /// <summary>
-    /// Called during BepInEx preloader phase, after IL2CPPChainloader.Initialize().
-    /// Starts a background thread that calls Execute() once Unity is running.
-    /// </summary>
-    public static void Initialize()
+    private void TriggerThread()
     {
-        Log.LogInfo("[PolyAITrigger] Scheduling delayed IL2CPPChainloader.Execute() in 6s...");
+        Thread.Sleep(8000);
 
-        var thread = new Thread(() =>
+        IL2CPPChainloader? loader = null;
+        for (int i = 0; i < 6; i++)
         {
-            Thread.Sleep(6000); // Give Unity time to fully start
+            loader = IL2CPPChainloader.Instance;
+            if (loader != null) break;
+            Log.LogWarning($"[PolyAITrigger] Instance null attempt {i + 1}/6, retrying...");
+            Thread.Sleep(2000);
+        }
 
-            try
-            {
-                var loader = IL2CPPChainloader.Instance;
-                if (loader == null)
-                {
-                    Log.LogWarning("[PolyAITrigger] IL2CPPChainloader.Instance is null — skipping.");
-                    return;
-                }
-
-                Log.LogInfo("[PolyAITrigger] Calling Execute() to force plugin loading...");
-                loader.Execute();
-                Log.LogInfo("[PolyAITrigger] Execute() complete — plugins should now be loaded.");
-            }
-            catch (Exception ex)
-            {
-                // If Execute() was already called (scene hook worked), this will throw — that's OK
-                Log.LogInfo($"[PolyAITrigger] Execute() skipped (may already have run): {ex.Message}");
-            }
-        })
+        if (loader == null)
         {
-            IsBackground = true,
-            Name = "PolyAITrigger"
-        };
+            Log.LogError("[PolyAITrigger] IL2CPPChainloader.Instance still null after 20s.");
+            return;
+        }
 
-        thread.Start();
+        try
+        {
+            Log.LogInfo("[PolyAITrigger] Calling Execute() now...");
+            loader.Execute();
+            Log.LogInfo("[PolyAITrigger] Execute() complete. PolyMod should be active.");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError($"[PolyAITrigger] Execute() failed: {ex}");
+        }
     }
-
-    // Required by BepInEx patcher API — no assembly patching needed
-    public static void Patch(AssemblyDefinition assembly) { }
 }
