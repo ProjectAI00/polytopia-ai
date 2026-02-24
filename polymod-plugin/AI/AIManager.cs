@@ -1,20 +1,22 @@
-using HarmonyLib;
 using PolytopiaBackendBase.Game;
 using System.Text.Json;
 using System.Threading;
+using UnityEngine;
 
 namespace PolyMod.AI;
 
 /// <summary>
 /// Manages the AI player integration.
-/// Hooks into game events and coordinates the AI decision loop.
+/// Coordinates polling, backend communication, and turn execution.
 /// </summary>
 public static class AIManager
 {
     private static AgentBridge? _bridge;
-    private static AIConfig _config = new();
+    internal static AIConfig _config = new();
     private static bool _initialized = false;
     private static int _aiTurnInProgress = 0;
+    internal static byte _lastSeenTurn = byte.MaxValue;
+    internal static byte _lastSeenPlayer = byte.MaxValue;
 
     /// <summary>
     /// Initialize the AI manager.
@@ -32,14 +34,15 @@ public static class AIManager
         }
 
         _bridge = new AgentBridge(_config.BackendUrl);
-        
-        // Register Harmony patches
-        Harmony.CreateAndPatchAll(typeof(AIManager));
-        
+
         Plugin.logger.LogInfo($"[AI] AI Manager initialized. Backend: {_config.BackendUrl}");
         Plugin.logger.LogInfo($"[AI] AI controls player slot: {_config.AIPlayerSlot}");
-        
+
         _initialized = true;
+
+        var pollerObject = new GameObject("AIPoller");
+        UnityEngine.Object.DontDestroyOnLoad(pollerObject);
+        pollerObject.AddComponent<AIPoller>();
 
         // Check backend health on startup
         _ = CheckBackendHealth();
@@ -178,65 +181,6 @@ public static class AIManager
         }
     }
 
-    #region Harmony Patches
-
-    /// <summary>
-    /// Hook into StartTurnAction to detect when it's the AI's turn.
-    /// </summary>
-    [HarmonyPostfix]
-    [HarmonyPatch(typeof(StartTurnAction), nameof(StartTurnAction.Execute))]
-    private static void StartTurnAction_Execute_Postfix(StartTurnAction __instance, GameState state)
-    {
-        if (!_config.Enabled) return;
-
-        var playerId = (byte)__instance.PlayerId;
-        
-        if (IsAIControlled(playerId))
-        {
-            Plugin.logger.LogInfo($"[AI] Detected AI player's turn (Player {playerId})");
-            
-            // Run AI turn processing asynchronously
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    // Small delay to let the game state settle
-                    await Task.Delay(500);
-                    await ProcessAITurn(state, playerId);
-                }
-                catch (Exception ex)
-                {
-                    Plugin.logger.LogError($"[AI] Error in AI turn task: {ex.Message}");
-                }
-            });
-        }
-    }
-
-    /// <summary>
-    /// Hook into game initialization to check AI setup.
-    /// </summary>
-    [HarmonyPostfix]
-    [HarmonyPatch(typeof(GameManager), nameof(GameManager.StartGame))]
-    private static void GameManager_StartGame_Postfix()
-    {
-        if (!_config.Enabled) return;
-
-        Plugin.logger.LogInfo("[AI] Game started - AI Agent ready");
-        
-        // Log player setup
-        var gameState = GameManager.GameState;
-        if (gameState?.PlayerStates != null)
-        {
-            foreach (var player in gameState.PlayerStates)
-            {
-                if (player == null) continue;
-                var aiTag = IsAIControlled(player.Id) ? " [AI CONTROLLED]" : "";
-                Plugin.logger.LogInfo($"[AI] Player {player.Id}: {player.tribe}{aiTag}");
-            }
-        }
-    }
-
-    #endregion
 }
 
 /// <summary>
@@ -245,10 +189,8 @@ public static class AIManager
 public class AIConfig
 {
     public bool Enabled { get; set; } = true;
-    public int AIPlayerSlot { get; set; } = 0; // Which player slot the AI controls
+    public int AIPlayerSlot { get; set; } = 1; // Which player slot the AI controls
     public string BackendUrl { get; set; } = "http://localhost:3001";
     public bool DebugLogging { get; set; } = true;
     public int ActionDelayMs { get; set; } = 200; // Delay between actions
 }
-
-

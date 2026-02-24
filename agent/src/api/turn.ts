@@ -6,6 +6,7 @@
 
 import type { Request, Response } from "express";
 import { processGameTurn } from "../agent/polytopiaBrain.js";
+import { logTurn } from "../storage/gameLog.js";
 import type { TurnRequest, TurnResponse, GameState } from "../game/types.js";
 
 /**
@@ -63,6 +64,10 @@ export async function handleTurnRequest(req: Request, res: Response): Promise<vo
     }
     
     console.log(`[API] ${actions.length} actions planned (${duration}ms, confidence: ${result.confidence})`);
+
+    // Phase 2: Log every turn asynchronously (non-blocking)
+    const gameId = `game-${gameState.turn}-p${playerId}`;
+    logTurn(gameId, gameState.turn, gameState, actions, result.reasoning).catch(() => {/* ignore log errors */});
 
     res.json({
       success: true,
