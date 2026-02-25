@@ -89,10 +89,9 @@ Available action types:
 
 CRITICAL RULES:
 - Use the EXACT coordinates from the unit list for unitX/unitY
-- Movement is STRICTLY 4-directional: up (y-1), down (y+1), left (x-1), right (x+1). NEVER diagonal.
-- Units can only move to adjacent tiles (Manhattan distance 1, or 2 for riders)
-- Units can only attack enemies within their range
-- If you have units, MOVE or ATTACK with them - this is your priority
+- Each unit in the game state has a "validMoves" array listing EXACTLY which tiles it can legally move to. YOU MUST ONLY move to tiles listed in validMoves. If validMoves is empty, the unit cannot move.
+- Each unit also has an "attackTargets" array listing enemies it can legally attack. Only attack targets listed there.
+- Never guess coordinates — only use moves and attacks from validMoves/attackTargets
 - Never research a tech you already have
 
 IMPORTANT: Return ALL actions you want to take this turn in the "actions" array. Always end with "end_turn".`;

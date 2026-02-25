@@ -11,6 +11,7 @@ import { resolveDefaultModel } from "../config/models.js";
 import { POLYTOPIA_SYSTEM_PROMPT, buildGameStatePrompt } from "./prompts/polytopia.js";
 import { parseAction } from "./actionParser.js";
 import { getPromptOverride } from "../api/reload.js";
+import { getLegalActions } from "../game/legalActions.js";
 import type { GameState, Action, AgentResponse } from "../game/types.js";
 
 export interface BrainConfig {
@@ -108,9 +109,10 @@ IMPORTANT: Use exact coordinates from the unit list. Return an "actions" array w
 
       // Parse the response
       const parsed = parseAgentResponse(responseText);
+      let reasoning = parsed.reasoning;
       
       // Handle action sequences
-      let actions: any[] = [];
+      let actions: Action[] = [];
 
       if (parsed.actions && Array.isArray(parsed.actions)) {
         for (const rawAct of parsed.actions) {
@@ -129,6 +131,18 @@ IMPORTANT: Use exact coordinates from the unit list. Return an "actions" array w
           if (debug) console.error(`[PolytopiaBrain] Invalid action skipped:`, e);
         }
       }
+
+      const hasNonEndTurnAction = actions.some((action) => action.type !== "end_turn");
+      if (!hasNonEndTurnAction) {
+        const fallbackAction = selectFallbackLegalAction(gameState, playerId);
+        if (fallbackAction) {
+          actions = [fallbackAction, { type: "end_turn" }];
+          reasoning = `${reasoning} | Fallback legal action selected because model actions were invalid or empty.`;
+          if (debug) {
+            console.log("[PolytopiaBrain] Applied fallback legal action:", fallbackAction);
+          }
+        }
+      }
       
       // Always end with end_turn
       if (actions.length === 0 || actions[actions.length - 1].type !== "end_turn") {
@@ -137,11 +151,11 @@ IMPORTANT: Use exact coordinates from the unit list. Return an "actions" array w
       
       if (debug) {
         console.log(`[PolytopiaBrain] Planned ${actions.length} actions`);
-        console.log(`[PolytopiaBrain] Reasoning: ${parsed.reasoning}`);
+        console.log(`[PolytopiaBrain] Reasoning: ${reasoning}`);
       }
 
       return {
-        reasoning: parsed.reasoning,
+        reasoning,
         action: actions[0] || { type: "end_turn" }, // Backwards compat
         actions: actions, // New: full sequence
         confidence: parsed.confidence ?? 0.8,
@@ -207,3 +221,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function selectFallbackLegalAction(gameState: GameState, playerId: number): Action | null {
+  const legalActions = getLegalActions(gameState, playerId).filter((action) => action.type !== "end_turn");
+  if (legalActions.length === 0) {
+    return null;
+  }
+
+  const priority: Action["type"][] = [
+    "attack",
+    "capture",
+    "move",
+    "train",
+    "research",
+    "build",
+    "convert",
+    "disembark",
+    "heal",
+    "end_turn",
+  ];
+
+  for (const actionType of priority) {
+    const match = legalActions.find((action) => action.type === actionType);
+    if (match) {
+      return match;
+    }
+  }
+
+  return legalActions[0];
+}
