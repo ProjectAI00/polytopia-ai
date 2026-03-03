@@ -128,6 +128,19 @@ export type TribeType =
 /**
  * Represents a unit on the map
  */
+export interface ValidMove {
+  x: number;
+  y: number;
+  terrain: string;
+}
+
+export interface AttackTarget {
+  x: number;
+  y: number;
+  unitType: string;
+  health: number;
+}
+
 export interface Unit {
   id: number;
   type: UnitType;
@@ -142,6 +155,8 @@ export interface Unit {
   canMove: boolean;
   canAttack: boolean;
   kills: number;
+  validMoves?: ValidMove[];
+  attackTargets?: AttackTarget[];
 }
 
 /**

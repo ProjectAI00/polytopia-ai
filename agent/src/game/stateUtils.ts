@@ -1,4 +1,4 @@
-import type { GameState, Tile, Unit } from "./types.js";
+import type { GameState, Tile, Unit, ValidMove, AttackTarget } from "./types.js";
 
 const tileIndexCache = new WeakMap<GameState, Map<string, Tile>>();
 
@@ -70,4 +70,64 @@ export function getMyCities(gameState: GameState, playerId: number): Tile[] {
 
 export function getPlayerStars(gameState: GameState, playerId: number): number {
   return gameState.players.find((player) => player.id === playerId)?.stars ?? 0;
+}
+
+/**
+ * Compute and annotate validMoves + attackTargets for all units owned by playerId.
+ * For units with movement > 1 (e.g. riders), BFS up to movement steps.
+ * Modifies state in-place and returns it.
+ */
+export function annotateValidMoves(state: GameState, playerId: number): GameState {
+  const index = buildTileIndex(state);
+
+  for (const tile of state.map.tiles) {
+    const unit = tile.unit;
+    if (!unit || unit.owner !== playerId) continue;
+
+    // --- valid moves: BFS up to movement steps, no water, no occupied ---
+    if (unit.canMove) {
+      const visited = new Set<string>();
+      const queue: Array<{ x: number; y: number; steps: number }> = [{ x: tile.x, y: tile.y, steps: 0 }];
+      const moves: ValidMove[] = [];
+      visited.add(`${tile.x},${tile.y}`);
+
+      while (queue.length > 0) {
+        const cur = queue.shift()!;
+        if (cur.steps >= (unit.movement || 1)) continue;
+        for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+          const nx = cur.x + dx, ny = cur.y + dy;
+          const key = `${nx},${ny}`;
+          if (visited.has(key)) continue;
+          visited.add(key);
+          const t = index.get(key);
+          if (!t || t.terrain === "water" || t.terrain === "ocean") continue;
+          if (!t.unit) {
+            moves.push({ x: nx, y: ny, terrain: t.terrain });
+            queue.push({ x: nx, y: ny, steps: cur.steps + 1 });
+          }
+          // occupied tiles block further movement but don't count as valid moves
+        }
+      }
+      unit.validMoves = moves;
+    } else {
+      unit.validMoves = [];
+    }
+
+    // --- attack targets: all enemy units within range ---
+    if (unit.canAttack) {
+      const range = unit.range || 1;
+      const targets: AttackTarget[] = [];
+      for (const t of state.map.tiles) {
+        if (!t.unit || t.unit.owner === playerId) continue;
+        if (manhattanDistance(tile.x, tile.y, t.x, t.y) <= range) {
+          targets.push({ x: t.x, y: t.y, unitType: t.unit.type, health: t.unit.health });
+        }
+      }
+      unit.attackTargets = targets;
+    } else {
+      unit.attackTargets = [];
+    }
+  }
+
+  return state;
 }

@@ -19,6 +19,7 @@ import type { GameState, Tile } from "../game/types.js";
 import { processGameTurn } from "../agent/polytopiaBrain.js";
 import { applyAction, isGameOver, cloneState } from "./gameSimulator.js";
 import { startGameLog, logTurn, endGameLog } from "../storage/gameLog.js";
+import { annotateValidMoves } from "../game/stateUtils.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -142,6 +143,7 @@ async function runGame() {
     console.log(`\n── Turn ${state.turn} │ ${player?.name} (Player ${playerId}) │ Stars: ${player?.stars} ──`);
 
     try {
+      annotateValidMoves(state, playerId);
       const result = await processGameTurn(state, playerId, { model, debug });
 
       // Apply each action returned by the agent

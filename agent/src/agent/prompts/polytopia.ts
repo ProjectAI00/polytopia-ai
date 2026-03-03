@@ -151,9 +151,20 @@ export function buildGameStatePrompt(gameState: GameState, playerId: number): st
 ### MY UNITS (${myUnits.length} total) - USE THESE COORDINATES FOR MOVE/ATTACK`;
 
   if (myUnits.length > 0) {
-    prompt += "\n" + myUnits.slice(0, 15).map((u: any) =>
-      `- ${u.type.toUpperCase()} at (${u.x}, ${u.y}) | HP: ${u.health}/${u.maxHealth} | canMove: ${u.canMove} | canAttack: ${u.canAttack}`
-    ).join("\n");
+    prompt += "\n" + myUnits.slice(0, 15).map((u: any) => {
+      let line = `- ${u.type.toUpperCase()} at (${u.x}, ${u.y}) | HP: ${u.health}/${u.maxHealth}`;
+      const moves: any[] = u.validMoves ?? [];
+      const targets: any[] = u.attackTargets ?? [];
+      if (moves.length > 0) {
+        line += `\n    VALID MOVES: ${moves.map((m: any) => `(${m.x},${m.y})`).join(", ")}`;
+      } else {
+        line += `\n    VALID MOVES: none`;
+      }
+      if (targets.length > 0) {
+        line += `\n    ATTACK TARGETS: ${targets.map((t: any) => `${t.unitType} at (${t.x},${t.y}) HP:${t.health}`).join(", ")}`;
+      }
+      return line;
+    }).join("\n");
   } else {
     prompt += "\n- No units available";
   }
