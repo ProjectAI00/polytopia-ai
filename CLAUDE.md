@@ -395,7 +395,58 @@ imi complete <task_id> "summary" \
 imi decide "what" "why"                            # log a decision you made during execution
 imi log "note"                                     # log a direction insight or observation mid-task
 imi lesson "what went wrong and what to do instead"  # store a verified lesson after a corrected mistake
+
+# Parallel execution — use when the user asks to run multiple tasks at once
+imi run <task_id>                                  # run a single task via hankweave (auto-completes on success)
+imi wrap <task_id> -- <command>                    # wrap any agent CLI command; tracks lifecycle, auto-fails on crash
+imi orchestrate --workers N -- <command>           # spin up N agents in parallel, each claiming and running a task
+imi orchestrate --goal <goal_id> --workers N -- <command>  # same but scoped to one goal
 ```
+
+**When the user says "run all tasks in parallel", "spin up multiple agents", or "use N agents for this"** — reach for `imi orchestrate`. It claims tasks from the backlog, spawns N parallel workers each running `<command>`, and tracks all of them in IMI. There's no hard cap — `--workers 50` works. Each worker auto-completes its task in the DB when done.
+
+**Default rule: one agent per task, run in parallel.** Any time the user says "run all tasks", "work on all goals", "execute everything", or similar — default to `imi orchestrate` with one worker per task. Don't run them sequentially unless tasks explicitly depend on each other. If tasks are independent, parallel is always better. Scope to a goal with `--goal` when the request is goal-specific, otherwise let orchestrate pull from the full backlog.
+
+**Context injection — each worker gets the task brief automatically.** When `imi wrap` or `imi orchestrate` starts a worker, it writes the task brief to `.imi/runs/<task_id>/context.md` and sets these env vars on the child process:
+- `IMI_TASK_ID` — the task ID
+- `IMI_TASK_TITLE` — the task title
+- `IMI_TASK_CONTEXT_FILE` — absolute path to context.md
+
+Use these to pass the task brief to any agent CLI:
+```bash
+# Claude Code — read context from file
+imi orchestrate --workers 10 -- sh -c 'claude -p "$(cat "$IMI_TASK_CONTEXT_FILE")" --dangerously-skip-permissions'
+
+# Codex
+imi orchestrate --workers 10 -- sh -c 'codex exec "$(cat "$IMI_TASK_CONTEXT_FILE")"'
+```
+
+---
+
+## hankweave and entire
+
+Two tools ship alongside IMI. Know when to reach for each.
+
+**hankweave** — the execution engine. `imi run <task_id>` calls hankweave directly and auto-completes the task in IMI on success. Use it for self-contained tasks that can be described in a brief. It handles retries, structured output, and task lifecycle for you. You don't call `hankweave` yourself — `imi run` handles it.
+
+**entire** — commit tracking and session verification. When you make changes that touch the codebase, entire can capture the full session (transcript, files touched, tool calls) alongside the git commit. Agents should use it at these moments:
+
+```bash
+entire enable           # run once per project to set up tracking (if not already set up)
+entire checkpoint       # call before major changes — creates a named restore point
+entire explain          # call after completing a task — verifies what the agent actually did
+entire rewind           # roll back to a previous checkpoint if something went wrong
+```
+
+**When to call what:**
+- Before a risky refactor or database migration: `entire checkpoint`
+- After `imi complete` on a code task: `entire explain` to verify what was shipped
+- If something broke and you need to undo: `entire rewind`
+- On a fresh project that hasn't had entire enabled: `entire enable`, then proceed
+
+If `entire` is not installed, skip the calls gracefully — but log a note so the human knows they should install it from https://docs.entire.io.
+
+---
 
 A few of these deserve more attention:
 

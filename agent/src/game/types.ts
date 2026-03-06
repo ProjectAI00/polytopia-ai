@@ -152,8 +152,13 @@ export interface Unit {
   movement: number;
   range: number;
   isVeteran: boolean;
+  promotionLevel?: number;
+  xp?: number;
   canMove: boolean;
   canAttack: boolean;
+  moved?: boolean;
+  attacked?: boolean;
+  effects?: string[];
   kills: number;
   validMoves?: ValidMove[];
   attackTargets?: AttackTarget[];
@@ -166,10 +171,15 @@ export interface City {
   name: string;
   level: number;
   population: number;
-  populationCap: number;
+  populationCap?: number | null;
   isCapital: boolean;
-  hasWalls: boolean;
-  connectedToCapital: boolean;
+  capitalOf?: number | null;
+  hasWalls?: boolean;
+  connectedToCapital?: boolean;
+  connectedToCapitalOfPlayer?: number | null;
+  production?: number;
+  rewards?: string[];
+  effects?: string[];
 }
 
 /**
@@ -187,6 +197,13 @@ export interface Tile {
   city: City | null;
   unit: Unit | null;
   hasRoad: boolean;
+  hasRoute?: boolean;
+  capitalOf?: number | null;
+  rulingCity?: {
+    x: number;
+    y: number;
+  } | null;
+  effects?: string[];
 }
 
 /**
@@ -199,7 +216,11 @@ export interface Player {
   stars: number;
   starsPerTurn: number;
   techs: TechType[];
+  unlockableTechs?: TechType[];
+  unlockedUnits?: string[];
+  unlockableImprovements?: ImprovementType[];
   score: number;
+  kills?: number;
   cities: number;
   units: number;
   isAlive: boolean;
@@ -214,6 +235,7 @@ export interface GameState {
   maxTurns: number;
   currentPlayerId: number;
   gameMode: string;
+  legalActions?: Action[];
   players: Player[];
   map: {
     width: number;
@@ -332,4 +354,3 @@ export interface TurnResponse {
   reasoning?: string;
   error?: string;
 }
-

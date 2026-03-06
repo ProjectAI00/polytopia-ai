@@ -71,6 +71,14 @@ export function parseAction(rawAction: any, gameState: GameState, playerId: numb
   }
 }
 
+function getRuntimeLegalActions(gameState: GameState): Action[] {
+  return Array.isArray(gameState.legalActions) ? gameState.legalActions : [];
+}
+
+function hasRuntimeLegalAction(gameState: GameState, matcher: (action: Action) => boolean): boolean {
+  return getRuntimeLegalActions(gameState).some(matcher);
+}
+
 function validateMoveAction(raw: any, gameState: GameState, playerId: number): Action {
   let unitX = raw.unitX;
   let unitY = raw.unitY;
@@ -100,6 +108,13 @@ function validateMoveAction(raw: any, gameState: GameState, playerId: number): A
   }
   if (targetTile.unit) {
     throw new Error("Move action: target tile is occupied");
+  }
+
+  if (unitTile.unit.validMoves && unitTile.unit.validMoves.length > 0) {
+    const isListedMove = unitTile.unit.validMoves.some((move) => move.x === toX && move.y === toY);
+    if (!isListedMove) {
+      throw new Error("Move action: target tile not present in runtime validMoves");
+    }
   }
 
   const distance = manhattanDistance(unitX, unitY, toX, toY);
@@ -137,6 +152,13 @@ function validateAttackAction(raw: any, gameState: GameState, playerId: number):
   const targetTile = getTile(gameState, targetX, targetY);
   if (!targetTile?.unit || targetTile.unit.owner === playerId) {
     throw new Error("Attack action: no enemy unit at target");
+  }
+
+  if (unitTile.unit.attackTargets && unitTile.unit.attackTargets.length > 0) {
+    const isListedTarget = unitTile.unit.attackTargets.some((target) => target.x === targetX && target.y === targetY);
+    if (!isListedTarget) {
+      throw new Error("Attack action: target not present in runtime attackTargets");
+    }
   }
 
   const distance = manhattanDistance(unitX, unitY, targetX, targetY);
@@ -185,6 +207,20 @@ function validateTrainAction(raw: any, gameState: GameState, playerId: number): 
     throw new Error(`Train action: invalid unit type '${unitType}'`);
   }
 
+  if (
+    getRuntimeLegalActions(gameState).length > 0 &&
+    !hasRuntimeLegalAction(
+      gameState,
+      (action) =>
+        action.type === "train" &&
+        action.cityX === cityX &&
+        action.cityY === cityY &&
+        action.unitType === unitType
+    )
+  ) {
+      throw new Error("Train action: not present in runtime legalActions");
+  }
+
   const cost = TRAIN_COSTS[unitType as UnitType];
   if (cost !== undefined && getPlayerStars(gameState, playerId) < cost) {
     throw new Error(`Train action: not enough stars (need ${cost})`);
@@ -223,6 +259,16 @@ function validateResearchAction(raw: any, gameState: GameState, playerId: number
   ];
   if (!validTechs.includes(tech as TechType)) {
     throw new Error(`Research action: invalid tech '${tech}'`);
+  }
+
+  if (
+    getRuntimeLegalActions(gameState).length > 0 &&
+    !hasRuntimeLegalAction(
+      gameState,
+      (action) => action.type === "research" && action.tech === tech
+    )
+  ) {
+      throw new Error(`Research action: tech '${tech}' not present in runtime legalActions`);
   }
 
   const player = gameState.players.find((p) => p.id === playerId);
@@ -279,6 +325,20 @@ function validateBuildAction(raw: any, gameState: GameState, playerId: number): 
     throw new Error(`Build action: invalid improvement '${improvement}'`);
   }
 
+  if (
+    getRuntimeLegalActions(gameState).length > 0 &&
+    !hasRuntimeLegalAction(
+      gameState,
+      (action) =>
+        action.type === "build" &&
+        action.tileX === tileX &&
+        action.tileY === tileY &&
+        action.improvement === improvement
+    )
+  ) {
+      throw new Error("Build action: not present in runtime legalActions");
+  }
+
   const cost = IMPROVEMENT_COSTS[improvement as ImprovementType];
   if (cost !== undefined && getPlayerStars(gameState, playerId) < cost) {
     throw new Error(`Build action: not enough stars (need ${cost})`);
@@ -300,6 +360,14 @@ function validateCaptureAction(raw: any, gameState: GameState, playerId: number)
   }
   if (!tile.city) {
     throw new Error("Capture action: no city/village at unit location");
+  }
+
+  if (getRuntimeLegalActions(gameState).length > 0 &&
+      !hasRuntimeLegalAction(
+        gameState,
+        (action) => action.type === "capture" && action.unitX === unitX && action.unitY === unitY
+      )) {
+    throw new Error("Capture action: not present in runtime legalActions");
   }
 
   return { type: "capture", unitX, unitY };
@@ -399,4 +467,3 @@ function getUnitAttackRange(unit: Unit): number {
 function isValidCoord(coord: any): boolean {
   return typeof coord === "number" && coord >= 0 && Number.isInteger(coord);
 }
-

@@ -50,7 +50,16 @@ function getAttackRange(unit: Unit): number {
   return unit.range || 1;
 }
 
+function getRuntimeLegalActions(gameState: GameState): Action[] {
+  return Array.isArray(gameState.legalActions) ? [...gameState.legalActions] : [];
+}
+
 export function getLegalActions(gameState: GameState, playerId: number): Action[] {
+  const runtimeActions = getRuntimeLegalActions(gameState);
+  if (runtimeActions.length > 0) {
+    return runtimeActions;
+  }
+
   const actions: Action[] = [];
   const stars = getPlayerStars(gameState, playerId);
 

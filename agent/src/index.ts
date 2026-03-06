@@ -1,6 +1,7 @@
 import express from "express";
 import { handleTurnRequest } from "./api/turn.js";
 import { handleReloadPrompt } from "./api/reload.js";
+import { initializeProviders } from "./config/providers/index.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -19,11 +20,12 @@ app.post("/api/turn", handleTurnRequest);
 app.get("/api/reload-prompt", handleReloadPrompt);
 app.post("/api/reload-prompt", handleReloadPrompt);
 
+await initializeProviders();
+
 app.listen(PORT, () => {
   console.log(`[polytopia-agent] Server running on port ${PORT}`);
   console.log(`[polytopia-agent] POST /api/turn - Process game turn`);
   console.log(`[polytopia-agent] GET /health - Health check`);
   console.log(`[polytopia-agent] POST /api/reload-prompt - Hot-reload AI prompt`);
 });
-
 

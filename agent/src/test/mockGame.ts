@@ -125,6 +125,17 @@ export const mockGameState: GameState = {
       { x: 4, y: 7, terrain: "field", owner: null, visible: false, explored: false, resource: null, improvement: null, city: null, unit: null, hasRoad: false },
     ],
   },
+  legalActions: [
+    { type: "move", unitX: 2, unitY: 2, toX: 3, toY: 2 },
+    { type: "move", unitX: 2, unitY: 2, toX: 2, toY: 3 },
+    { type: "move", unitX: 1, unitY: 4, toX: 2, toY: 4 },
+    { type: "move", unitX: 1, unitY: 4, toX: 1, toY: 5 },
+    { type: "train", cityX: 1, cityY: 1, unitType: "warrior" },
+    { type: "train", cityX: 1, cityY: 1, unitType: "rider" },
+    { type: "research", tech: "riding" },
+    { type: "research", tech: "hunting" },
+    { type: "end_turn" },
+  ],
 };
 
 // Run test if executed directly
@@ -158,6 +169,5 @@ const isMain = process.argv[1]?.includes("mockGame");
 if (isMain) {
   runTest();
 }
-
 
 

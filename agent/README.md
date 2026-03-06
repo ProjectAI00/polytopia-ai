@@ -14,7 +14,7 @@ POST /api/turn (Express API)
 Polytopia Brain (prompt + model selection)
       |
       v
-LLM (OpenRouter model)
+LLM provider (Copilot or OpenRouter)
       |
       v
 Action parser + validation (legal action filtering)
@@ -31,13 +31,21 @@ cp .env.example .env
 npm run dev
 ```
 
-Configure `.env` before running:
+Configure `.env` before running. Copilot is the default provider:
 
 ```env
-OPENROUTER_API_KEY=your-openrouter-api-key
-OR_MODEL=anthropic/claude-sonnet-4-20250514
+LLM_PROVIDER=copilot
+COPILOT_MODEL=gpt-5.1-codex-mini
 PORT=3001
 DEBUG=false
+```
+
+If you want OpenRouter instead:
+
+```env
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=your-openrouter-api-key
+OR_MODEL=anthropic/claude-sonnet-4-20250514
 ```
 
 ## API Endpoints
@@ -82,12 +90,14 @@ Supported action types include `move`, `attack`, `train`, `research`, `build`, `
 
 ## Configuration
 
-- `OPENROUTER_API_KEY`: API key for OpenRouter.
-- `OR_MODEL`: Model name (any OpenRouter-compatible model string).
+- `LLM_PROVIDER`: `copilot` (default) or `openrouter`.
+- `COPILOT_MODEL`: Copilot model name when using the Copilot provider.
+- `OPENROUTER_API_KEY`: API key for OpenRouter when `LLM_PROVIDER=openrouter`.
+- `OR_MODEL`: Model name for OpenRouter when `LLM_PROVIDER=openrouter`.
 - `PORT`: HTTP server port (default `3001`).
 - `DEBUG`: Enables verbose decision logs when `true`.
 
-You can switch models by changing `OR_MODEL` (for example, to cheaper/faster or stronger models depending on runtime goals).
+Copilot requires GitHub CLI authentication with Copilot access. You can switch providers by changing `LLM_PROVIDER`.
 
 ## Development
 
@@ -106,6 +116,5 @@ npx tsx src/test/mockGame.ts
 - Add a full training/simulation environment for self-play evaluation.
 - Expand game logging and replay analysis tooling.
 - Introduce specialized models/prompts by phase (opening, combat, endgame).
-
 
 

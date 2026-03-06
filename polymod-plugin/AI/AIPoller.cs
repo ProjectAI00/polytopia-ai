@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using UnityEngine;
 
 namespace PolyMod.AI;
@@ -27,7 +26,7 @@ public class AIPoller : MonoBehaviour
             if (gs == null) return;
 
             // CurrentTurn and current player ID from the game state.
-            var currentTurn   = (byte)gs.CurrentTurn;
+            var currentTurn = (int)gs.CurrentTurn;
             var currentPlayer = gs.CurrentPlayer; // may be PlayerState or int — cast as needed
 
             if (!AIManager.IsAIControlled((int)currentPlayer)) return;
@@ -38,19 +37,7 @@ public class AIPoller : MonoBehaviour
             AIManager._lastSeenTurn   = currentTurn;
 
             Plugin.logger.LogInfo($"[AI] Detected AI player's turn (Player {currentPlayer}, Turn {currentTurn})");
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(500); // Let game state settle after turn start
-                    await AIManager.ProcessAITurn(gs, currentPlayer);
-                }
-                catch (Exception ex)
-                {
-                    Plugin.logger.LogError($"[AI] Error in AI turn task: {ex.Message}");
-                }
-            });
+            StartCoroutine(AIManager.ProcessAITurn(currentPlayer, currentTurn));
         }
         catch (Exception ex)
         {

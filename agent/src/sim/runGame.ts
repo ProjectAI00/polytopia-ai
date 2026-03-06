@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import type { GameState, Tile } from "../game/types.js";
 import { processGameTurn } from "../agent/polytopiaBrain.js";
+import { resolveCopilotModel, resolveDefaultModel } from "../config/models.js";
 import { applyAction, isGameOver, cloneState } from "./gameSimulator.js";
 import { startGameLog, logTurn, endGameLog } from "../storage/gameLog.js";
 import { annotateValidMoves } from "../game/stateUtils.js";
@@ -31,10 +32,15 @@ function parseArgs() {
     const i = args.indexOf(flag);
     return i !== -1 && args[i + 1] ? args[i + 1] : def;
   };
+  const provider = (process.env.LLM_PROVIDER ?? "copilot").toLowerCase();
+  const defaultModel =
+    provider === "copilot"
+      ? resolveCopilotModel(process.env.COPILOT_MODEL ?? process.env.OR_MODEL)
+      : resolveDefaultModel(process.env.OR_MODEL);
   return {
     maxTurns: parseInt(get("--turns", "30"), 10),
-    p1Model:  get("--p1", process.env.OR_MODEL ?? "anthropic/claude-sonnet-4-20250514"),
-    p2Model:  get("--p2", process.env.OR_MODEL ?? "anthropic/claude-sonnet-4-20250514"),
+    p1Model: get("--p1", defaultModel),
+    p2Model: get("--p2", defaultModel),
     debug:    args.includes("--debug"),
   };
 }

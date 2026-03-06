@@ -14,6 +14,14 @@ GAME_DIR="/Users/aimar/Library/Application Support/Steam/steamapps/common/The Ba
 BACKEND_PID_FILE="/tmp/polytopia-ai-backend.pid"
 BACKEND_PORT=3001
 
+current_env_value() {
+  local key="$1"
+  if [ ! -f "$AGENT_DIR/.env" ]; then
+    return 0
+  fi
+  grep -E "^${key}=" "$AGENT_DIR/.env" | tail -n 1 | cut -d= -f2-
+}
+
 start_backend() {
   # Check if already running
   if curl -sf "http://localhost:$BACKEND_PORT/health" >/dev/null 2>&1; then
@@ -21,9 +29,9 @@ start_backend() {
     return 0
   fi
 
-  echo "🚀 Starting AI backend (gpt-5.1-codex-mini)..."
+  echo "🚀 Starting AI backend..."
   if [ ! -f "$AGENT_DIR/.env" ]; then
-    echo "❌ Missing agent/.env — create it with OPENROUTER_API_KEY and OR_MODEL"
+    echo "❌ Missing agent/.env — set LLM_PROVIDER (copilot|openrouter) and provider credentials if needed"
     exit 1
   fi
 
@@ -45,7 +53,19 @@ start_backend() {
     sleep 1
     if curl -sf "http://localhost:$BACKEND_PORT/health" >/dev/null 2>&1; then
       echo " ready!"
-      echo "   PID: $pid  |  Model: $(cat .env | grep OR_MODEL | cut -d= -f2)"
+      local provider model
+      provider="$(current_env_value LLM_PROVIDER)"
+      model="$(current_env_value COPILOT_MODEL)"
+      if [ -z "$provider" ]; then
+        provider="copilot"
+      fi
+      if [ "$provider" = "openrouter" ]; then
+        model="$(current_env_value OR_MODEL)"
+      fi
+      if [ -z "$model" ]; then
+        model="provider default"
+      fi
+      echo "   PID: $pid  |  Provider: $provider  |  Model: $model"
       return 0
     fi
     echo -n "."

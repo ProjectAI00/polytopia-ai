@@ -118,6 +118,10 @@ export function buildGameStatePrompt(gameState: GameState, playerId: number): st
 
   const myPlayer = players.find((p: any) => p.id === playerId);
   const enemies = players.filter((p: any) => p.id !== playerId && p.id !== 255);
+  const legalActions = Array.isArray((gameState as any).legalActions) ? (gameState as any).legalActions : [];
+  const legalResearch = legalActions.filter((action: any) => action.type === "research");
+  const legalTrains = legalActions.filter((action: any) => action.type === "train");
+  const legalBuilds = legalActions.filter((action: any) => action.type === "build");
 
   // Get my tiles and units from the available data
   const myTiles = tiles.filter((t: any) => t.owner === playerId);
@@ -133,8 +137,13 @@ export function buildGameStatePrompt(gameState: GameState, playerId: number): st
 
 ### My Status (Player ${playerId})
 - Stars: ${(myPlayer as any)?.currency || myPlayer?.stars || "?"}
+- Stars per turn: ${myPlayer?.starsPerTurn ?? "?"}
 - Score: ${myPlayer?.score || "?"}
 - Cities: ${myPlayer?.cities || "?"}
+- Known techs: ${myPlayer?.techs?.join(", ") || "none"}
+- Unlockable techs: ${(myPlayer as any)?.unlockableTechs?.join(", ") || (legalResearch.map((action: any) => action.tech).join(", ") || "none")}
+- Unlockable units: ${(myPlayer as any)?.unlockedUnits?.join(", ") || "unknown"}
+- Unlockable improvements: ${(myPlayer as any)?.unlockableImprovements?.join(", ") || (legalBuilds.map((action: any) => action.improvement).join(", ") || "none")}
 
 ### Enemies`;
 
@@ -189,6 +198,12 @@ export function buildGameStatePrompt(gameState: GameState, playerId: number): st
 - Tiles I own: ${myTiles.length}
 - My cities: ${myCities.length}
 ${myCities.length > 0 ? `- City locations: ${myCities.slice(0, 5).map((t: any) => `${t.city.name} at (${t.x}, ${t.y})`).join(", ")}` : ""}
+
+### RUNTIME LEGAL ACTIONS
+- Total legal actions provided by runtime: ${legalActions.length || 0}
+${legalResearch.length > 0 ? `- RESEARCH OPTIONS: ${legalResearch.map((action: any) => action.tech).join(", ")}` : "- RESEARCH OPTIONS: none provided"}
+${legalTrains.length > 0 ? `- TRAIN OPTIONS: ${legalTrains.slice(0, 8).map((action: any) => `${action.unitType} at (${action.cityX}, ${action.cityY})`).join(", ")}` : "- TRAIN OPTIONS: none provided"}
+${legalBuilds.length > 0 ? `- BUILD OPTIONS: ${legalBuilds.slice(0, 8).map((action: any) => `${action.improvement} at (${action.tileX}, ${action.tileY})`).join(", ")}` : "- BUILD OPTIONS: none provided"}
 
 ### WHAT YOU CAN DO THIS TURN
 ${myUnits.length > 0 ? `✅ You have ${myUnits.length} unit(s) - MOVE and ATTACK with them using their coordinates!` : ""}

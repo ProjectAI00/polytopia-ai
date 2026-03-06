@@ -1,6 +1,8 @@
 using PolytopiaBackendBase.Game;
+using System.Collections;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace PolyMod.AI;
@@ -11,11 +13,13 @@ namespace PolyMod.AI;
 /// </summary>
 public static class AIManager
 {
+    private const float TurnSettleDelaySeconds = 0.5f;
+    private const int MaxActionsPerTurn = 50;
     private static AgentBridge? _bridge;
     internal static AIConfig _config = new();
     private static bool _initialized = false;
     private static int _aiTurnInProgress = 0;
-    internal static byte _lastSeenTurn = byte.MaxValue;
+    internal static int _lastSeenTurn = -1;
     internal static byte _lastSeenPlayer = byte.MaxValue;
 
     /// <summary>
@@ -102,78 +106,94 @@ public static class AIManager
         return playerId == _config.AIPlayerSlot;
     }
 
-    /// <summary>
-    /// Process an AI turn - called when it's the AI player's turn.
-    /// </summary>
-    public static async Task ProcessAITurn(GameState gameState, byte playerId)
+    internal static IEnumerator ProcessAITurn(byte playerId, int expectedTurn)
     {
-        if (_bridge == null) return;
-        if (Interlocked.CompareExchange(ref _aiTurnInProgress, 1, 0) != 0) return;
-        
+        var bridge = _bridge;
+        if (bridge == null) yield break;
+        if (Interlocked.CompareExchange(ref _aiTurnInProgress, 1, 0) != 0) yield break;
+
         try
         {
-            Plugin.logger.LogInfo($"[AI] === AI Turn {gameState.CurrentTurn} ===");
+            yield return new WaitForSecondsRealtime(TurnSettleDelaySeconds);
 
-            // Extract current game state once and request all turn actions in one call
-            var stateJson = StateExtractor.ExtractGameState(gameState, playerId);
-            
+            if (!TryGetCurrentTurnState(playerId, expectedTurn, out _, out var stateJson))
+            {
+                yield break;
+            }
+
+            Plugin.logger.LogInfo($"[AI] === AI Turn {expectedTurn} ===");
+
             if (_config.DebugLogging)
             {
                 Plugin.logger.LogInfo($"[AI] Game state extracted ({stateJson.Length} bytes)");
             }
 
-            var turnResponse = await _bridge.GetTurnActions(stateJson, playerId);
-            if (turnResponse == null)
+            var turnTask = Task.Run(() => bridge.GetTurnActions(stateJson, playerId));
+            while (!turnTask.IsCompleted)
             {
-                Plugin.logger.LogWarning("[AI] No turn response received from backend, ending turn");
-                ActionExecutor.Execute(new ActionResponse { Type = "end_turn" }, gameState, playerId);
-                return;
+                yield return null;
             }
 
-            var actions = turnResponse.Actions;
-            if ((actions == null || actions.Length == 0) && turnResponse.Action != null)
+            if (turnTask.IsCanceled)
             {
-                actions = new[] { turnResponse.Action };
+                Plugin.logger.LogWarning("[AI] Backend request was canceled");
+                yield break;
             }
 
-            if (actions == null || actions.Length == 0)
+            if (turnTask.IsFaulted)
+            {
+                var backendException = turnTask.Exception?.GetBaseException();
+                Plugin.logger.LogError($"[AI] Error during backend turn request: {backendException?.Message ?? "Unknown error"}");
+                yield break;
+            }
+
+            var turnResponse = turnTask.Result;
+            var actions = GetActions(turnResponse);
+
+            if (actions.Length == 0)
             {
                 Plugin.logger.LogWarning("[AI] Backend returned no actions, ending turn");
-                ActionExecutor.Execute(new ActionResponse { Type = "end_turn" }, gameState, playerId);
-                return;
+                _ = TryExecuteOnCurrentState(new ActionResponse { Type = "end_turn" }, playerId, expectedTurn);
+                yield break;
             }
 
-            int actionCount = 0;
-            const int maxActions = 50;
-
-            foreach (var action in actions)
+            for (var actionIndex = 0; actionIndex < actions.Length; actionIndex++)
             {
-                actionCount++;
-                if (actionCount > maxActions)
+                var actionCount = actionIndex + 1;
+                if (actionCount > MaxActionsPerTurn)
                 {
                     Plugin.logger.LogWarning("[AI] Hit max actions limit, forcing end turn");
-                    ActionExecutor.Execute(new ActionResponse { Type = "end_turn" }, gameState, playerId);
-                    return;
+                    _ = TryExecuteOnCurrentState(new ActionResponse { Type = "end_turn" }, playerId, expectedTurn);
+                    yield break;
                 }
 
-                if (action.Type.Equals("end_turn", StringComparison.OrdinalIgnoreCase))
+                var action = actions[actionIndex];
+                var isEndTurn = string.Equals(action.Type, "end_turn", StringComparison.OrdinalIgnoreCase);
+                var success = TryExecuteOnCurrentState(action, playerId, expectedTurn);
+                if (!success.HasValue)
                 {
-                    Plugin.logger.LogInfo($"[AI] Turn complete after {actionCount} actions");
-                    ActionExecutor.Execute(action, gameState, playerId);
-                    return;
+                    yield break;
                 }
 
-                var success = ActionExecutor.Execute(action, gameState, playerId);
-                if (!success)
+                if (!success.Value)
                 {
                     Plugin.logger.LogWarning($"[AI] Action {action.Type} failed, continuing...");
                 }
 
-                await Task.Delay(_config.ActionDelayMs);
+                if (isEndTurn)
+                {
+                    Plugin.logger.LogInfo($"[AI] Turn complete after {actionCount} actions");
+                    yield break;
+                }
+
+                if (_config.ActionDelayMs > 0)
+                {
+                    yield return new WaitForSecondsRealtime(_config.ActionDelayMs / 1000f);
+                }
             }
 
             Plugin.logger.LogWarning("[AI] No end_turn action received, forcing end turn");
-            ActionExecutor.Execute(new ActionResponse { Type = "end_turn" }, gameState, playerId);
+            _ = TryExecuteOnCurrentState(new ActionResponse { Type = "end_turn" }, playerId, expectedTurn);
         }
         catch (Exception ex)
         {
@@ -183,6 +203,65 @@ public static class AIManager
         {
             Interlocked.Exchange(ref _aiTurnInProgress, 0);
         }
+    }
+
+    private static ActionResponse[] GetActions(TurnResponse? turnResponse)
+    {
+        if (turnResponse?.Actions is { Length: > 0 })
+        {
+            return turnResponse.Actions;
+        }
+
+        if (turnResponse?.Action != null)
+        {
+            return new[] { turnResponse.Action };
+        }
+
+        return Array.Empty<ActionResponse>();
+    }
+
+    private static bool TryGetCurrentTurnState(byte playerId, int expectedTurn, out GameState gameState, out string stateJson)
+    {
+        gameState = null!;
+        stateJson = string.Empty;
+
+        if (!TryGetCurrentGameState(playerId, expectedTurn, out gameState))
+        {
+            return false;
+        }
+
+        stateJson = StateExtractor.ExtractGameState(gameState, playerId);
+        return true;
+    }
+
+    private static bool? TryExecuteOnCurrentState(ActionResponse action, byte playerId, int expectedTurn)
+    {
+        if (!TryGetCurrentGameState(playerId, expectedTurn, out var gameState))
+        {
+            return null;
+        }
+
+        return ActionExecutor.Execute(action, gameState, playerId);
+    }
+
+    private static bool TryGetCurrentGameState(byte playerId, int expectedTurn, out GameState gameState)
+    {
+        gameState = GameManager.GameState;
+        if (gameState == null)
+        {
+            Plugin.logger.LogWarning("[AI] Game state unavailable, aborting AI turn");
+            return false;
+        }
+
+        var currentTurn = (int)gameState.CurrentTurn;
+        var currentPlayer = (byte)gameState.CurrentPlayer;
+        if (currentTurn != expectedTurn || currentPlayer != playerId || !IsAIControlled(currentPlayer))
+        {
+            Plugin.logger.LogWarning($"[AI] Turn changed before AI work could finish (expected Player {playerId}, Turn {expectedTurn}; got Player {currentPlayer}, Turn {currentTurn})");
+            return false;
+        }
+
+        return true;
     }
 
 }

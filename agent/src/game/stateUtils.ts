@@ -73,14 +73,24 @@ export function getPlayerStars(gameState: GameState, playerId: number): number {
 }
 
 /**
- * Compute and annotate validMoves + attackTargets for all units owned by playerId.
+ * Compute validMoves + attackTargets for all units owned by playerId.
  * For units with movement > 1 (e.g. riders), BFS up to movement steps.
- * Modifies state in-place and returns it.
+ * Returns a cloned state so callers do not mutate shared turn payloads in place.
  */
 export function annotateValidMoves(state: GameState, playerId: number): GameState {
-  const index = buildTileIndex(state);
+  const nextState: GameState = {
+    ...state,
+    map: {
+      ...state.map,
+      tiles: state.map.tiles.map((tile) => ({
+        ...tile,
+        unit: tile.unit ? { ...tile.unit } : null,
+      })),
+    },
+  };
+  const index = buildTileIndex(nextState);
 
-  for (const tile of state.map.tiles) {
+  for (const tile of nextState.map.tiles) {
     const unit = tile.unit;
     if (!unit || unit.owner !== playerId) continue;
 
@@ -117,7 +127,7 @@ export function annotateValidMoves(state: GameState, playerId: number): GameStat
     if (unit.canAttack) {
       const range = unit.range || 1;
       const targets: AttackTarget[] = [];
-      for (const t of state.map.tiles) {
+      for (const t of nextState.map.tiles) {
         if (!t.unit || t.unit.owner === playerId) continue;
         if (manhattanDistance(tile.x, tile.y, t.x, t.y) <= range) {
           targets.push({ x: t.x, y: t.y, unitType: t.unit.type, health: t.unit.health });
@@ -129,5 +139,5 @@ export function annotateValidMoves(state: GameState, playerId: number): GameStat
     }
   }
 
-  return state;
+  return nextState;
 }

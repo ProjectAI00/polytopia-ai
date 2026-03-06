@@ -1,20 +1,20 @@
 /**
  * Polytopia AI Brain
- * 
+ *
  * Agent loop that processes game state and returns optimal actions.
  * Adapted from imessage-bridge streamingAgentLoop.
  */
 
-import { generateText } from "ai";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { resolveDefaultModel } from "../config/models.js";
+import { getProvider } from "../config/providers/index.js";
 import { POLYTOPIA_SYSTEM_PROMPT, buildGameStatePrompt } from "./prompts/polytopia.js";
 import { parseAction } from "./actionParser.js";
 import { getPromptOverride } from "../api/reload.js";
 import { getLegalActions } from "../game/legalActions.js";
+import { annotateValidMoves } from "../game/stateUtils.js";
 import type { GameState, Action, AgentResponse } from "../game/types.js";
 
 export interface BrainConfig {
+  provider?: string;
   model?: string;
   temperature?: number;
   maxRetries?: number;
@@ -30,33 +30,39 @@ export async function processGameTurn(
   config: BrainConfig = {}
 ): Promise<AgentResponse> {
   const {
+    provider: providerOverride,
     model = process.env.OR_MODEL,
     temperature = 0.3, // Lower temperature for more consistent play
     maxRetries = 3,
     debug = process.env.DEBUG === "true",
   } = config;
-
-  const openrouter = createOpenRouter({
-    apiKey: process.env.OPENROUTER_API_KEY!,
-  });
-
-  const selectedModel = resolveDefaultModel(model);
+  const provider = getProvider(providerOverride);
   
   if (debug) {
-    console.log(`[PolytopiaBrain] Using model: ${selectedModel}`);
+    console.log(`[PolytopiaBrain] Using provider: ${provider.id}`);
+    console.log(`[PolytopiaBrain] Requested model: ${model ?? "(provider default)"}`);
     console.log(`[PolytopiaBrain] Processing turn ${gameState.turn} for player ${playerId}`);
   }
 
+  const hasRuntimeUnitHints = gameState.map.tiles.some(
+    (tile) =>
+      tile.unit?.owner === playerId &&
+      ((tile.unit.validMoves && tile.unit.validMoves.length > 0) ||
+        (tile.unit.attackTargets && tile.unit.attackTargets.length > 0))
+  );
+  const workingState =
+    gameState.legalActions?.length || hasRuntimeUnitHints
+      ? gameState
+      : annotateValidMoves(gameState, playerId);
+
   // Build the prompt with current game state
-  const gameStatePrompt = buildGameStatePrompt(gameState, playerId);
+  const gameStatePrompt = buildGameStatePrompt(workingState, playerId);
   
   // Check for hot-reloaded prompt override
   const promptOverride = getPromptOverride();
   const systemPrompt = promptOverride || POLYTOPIA_SYSTEM_PROMPT;
   
-  const fullPrompt = `${systemPrompt}
-
-${gameStatePrompt}
+  const userPrompt = `${gameStatePrompt}
 
 Analyze the situation and decide on the best actions. Think step by step:
 1. What is the current game phase (early/mid/late)?
@@ -89,18 +95,15 @@ IMPORTANT: Use exact coordinates from the unit list. Return an "actions" array w
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       if (debug) {
-        console.log(`[PolytopiaBrain] Calling model: ${selectedModel}`);
+        console.log(`[PolytopiaBrain] Calling provider: ${provider.id}`);
       }
       
-      const result = await generateText({
-        model: openrouter(selectedModel),
-        messages: [
-          { role: "user", content: fullPrompt }
-        ],
+      const responseText = await provider.generateText({
+        model,
+        systemPrompt,
+        prompt: userPrompt,
         temperature,
       });
-
-      const responseText = result.text;
       
       if (debug) {
         console.log(`[PolytopiaBrain] Response length: ${responseText?.length || 0}`);
@@ -117,7 +120,7 @@ IMPORTANT: Use exact coordinates from the unit list. Return an "actions" array w
       if (parsed.actions && Array.isArray(parsed.actions)) {
         for (const rawAct of parsed.actions) {
           try {
-            const validated = parseAction(rawAct, gameState, playerId);
+            const validated = parseAction(rawAct, workingState, playerId);
             actions.push(validated);
           } catch (e) {
             if (debug) console.error(`[PolytopiaBrain] Invalid action skipped:`, e);
@@ -125,16 +128,16 @@ IMPORTANT: Use exact coordinates from the unit list. Return an "actions" array w
         }
       } else if (parsed.action) {
         try {
-          const validated = parseAction(parsed.action, gameState, playerId);
-          actions.push(validated);
-        } catch (e) {
+            const validated = parseAction(parsed.action, workingState, playerId);
+            actions.push(validated);
+          } catch (e) {
           if (debug) console.error(`[PolytopiaBrain] Invalid action skipped:`, e);
         }
       }
 
       const hasNonEndTurnAction = actions.some((action) => action.type !== "end_turn");
       if (!hasNonEndTurnAction) {
-        const fallbackAction = selectFallbackLegalAction(gameState, playerId);
+          const fallbackAction = selectFallbackLegalAction(workingState, playerId);
         if (fallbackAction) {
           actions = [fallbackAction, { type: "end_turn" }];
           reasoning = `${reasoning} | Fallback legal action selected because model actions were invalid or empty.`;
