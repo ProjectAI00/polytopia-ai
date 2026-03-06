@@ -6,7 +6,7 @@ namespace PolyAI;
 
 public sealed class Poller
 {
-    private const string ConfigPath = "/Users/aimar/Library/Application Support/Steam/steamapps/common/The Battle of Polytopia/AIConfig.json";
+    internal const string ConfigPath = "/Users/aimar/Library/Application Support/Steam/steamapps/common/The Battle of Polytopia/AIConfig.json";
 
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(60) };
     private System.Threading.Thread _thread;
@@ -301,10 +301,41 @@ public sealed class Poller
 public class AIConfig
 {
     public bool Enabled { get; set; } = true;
-    public bool FullAI { get; set; } = false; // true = ALL slots in AIPlayerSlots controlled by GPT (AI vs AI)
+    public bool FullAI { get; set; } = false; // true = ALL slots in AIPlayerSlots controlled by backend
     public List<int> AIPlayerSlots { get; set; } = new() { 1, 2, 3, 4, 5, 6, 7 };
     public string BackendUrl { get; set; } = "http://localhost:3001";
     public int ActionDelayMs { get; set; } = 200;
+
+    // AutoStart: create and start a game automatically on launch without touching the UI.
+    // Players with Type=LocalUser are controlled by the backend AI via AIPoller.
+    // Players with Type=Bot use the game's built-in AI.
+    // For pure backend AI vs AI, set both players to Type=LocalUser and include both indices in AIPlayerSlots.
+    public bool AutoStart { get; set; } = false;
+    public AutoStartConfig AutoStartConfig { get; set; } = new();
+}
+
+public class AutoStartConfig
+{
+    // 11=small(2p), 14=medium(4p), 16=large(6p)
+    public int MapSize { get; set; } = 11;
+    // Domination, Perfection, Glory, Might, Sandbox
+    public string GameMode { get; set; } = "Domination";
+    // Easy, Normal, Hard, Crazy
+    public string Difficulty { get; set; } = "Normal";
+    public List<PlayerConfig> Players { get; set; } = new()
+    {
+        new PlayerConfig { Tribe = "Xinxi", Type = "LocalUser" },
+        new PlayerConfig { Tribe = "Bardur", Type = "Bot" },
+    };
+}
+
+public class PlayerConfig
+{
+    // Tribes: Xinxi, Imperius, Bardur, Oumaji, Kickoo, Hoodrick, Luxidoor, Vengir,
+    //         Zebasi, Aquarion, Elyrion, Polaris, Cymanti, Quetzali, Yadakk
+    public string Tribe { get; set; } = "Xinxi";
+    // LocalUser = backend AI via AIPoller; Bot = game's built-in AI
+    public string Type { get; set; } = "LocalUser";
 }
 
 public class BackendResponse

@@ -9,25 +9,31 @@ public sealed class Plugin : BasePlugin
 {
     internal static ManualLogSource Logger = null;
     private static Poller _poller;
+    private static AutoGameLauncher _launcher;
 
     public override void Load()
     {
         Logger = Log;
-        Logger.LogInfo("[PolyAI] Load() starting background poller...");
+        Logger.LogInfo("[PolyAI] Load() — starting poller and auto-launcher...");
         try
         {
+            _launcher = new AutoGameLauncher();
+            _launcher.Start();
+
             _poller = new Poller();
             _poller.Start();
-            Logger.LogInfo("[PolyAI] Load() returned — poller running in background.");
+
+            Logger.LogInfo("[PolyAI] Load() returned — poller and auto-launcher running.");
         }
         catch (Exception ex)
         {
-            Logger.LogError($"[PolyAI] Failed to start poller: {ex}");
+            Logger.LogError($"[PolyAI] Failed to start: {ex}");
         }
     }
 
     public override bool Unload()
     {
+        _launcher?.Stop();
         _poller?.Stop();
         return true;
     }
